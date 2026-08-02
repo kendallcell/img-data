@@ -1,19 +1,55 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "img-data"
 version = "0.1.0"
-description = "Inspect and remove metadata from AI generated images."
+description = "Inspect and remove metadata from AI-generated images."
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
+authors = [
+    { name = "Kendall Dugger" }
+]
+
 dependencies = [
-    "Pillow",
+    "Pillow>=12.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+    "black>=25.0",
+    "ruff>=0.12"
 ]
 
 [project.scripts]
 img-data = "img_data.cli:main"
 
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests"
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I"
+]
