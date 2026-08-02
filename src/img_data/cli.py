@@ -18,10 +18,7 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command")
 
-    inspect_parser = subparsers.add_parser(
-        "inspect",
-        help="Inspect an image."
-    )
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect an image.")
 
     inspect_parser.add_argument("image")
 
@@ -61,4 +58,3 @@ def main():
                 print(f"{key}: {value}")
         else:
             print("None")
-

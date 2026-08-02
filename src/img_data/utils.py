@@ -20,4 +20,3 @@ def format_bytes(size: int) -> str:
         value /= 1024.0
 
     return f"{value:.1f} PB"
-

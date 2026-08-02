@@ -37,4 +37,3 @@ def inspect_image(filename: str) -> dict:
             "png_info": dict(img.info),
             "exif": dict(img.getexif()),
         }
-
