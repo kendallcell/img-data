@@ -5,16 +5,12 @@ Command-line interface for img-data.
 """
 
 import argparse
+import sys
+
+from PIL import UnidentifiedImageError
 
 from .inspector import inspect_image
 from .utils import format_bytes
-
-
-def print_section(title: str):
-    """Print a section heading."""
-    print()
-    print(title)
-    print("-" * 60)
 
 
 def main():
@@ -34,111 +30,104 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command != "inspect":
-        parser.print_help()
-        return
+    if args.command == "inspect":
 
-    data = inspect_image(args.image)
+        try:
+            data = inspect_image(args.image)
 
-    #
-    # Image information
-    #
+        except FileNotFoundError:
+            print(
+                f"img-data: {args.image}: No such file or directory",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    print()
+        except PermissionError:
+            print(
+                f"img-data: {args.image}: access denied by the filesystem",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    print("Image Information")
-    print("=" * 60)
-
-    print(f"Filename   : {data['filename']}")
-    print(f"Format     : {data['format']}")
-    print(f"Mode       : {data['mode']}")
-    print(f"Resolution : {data['width']} x {data['height']}")
-    print(f"File Size  : {format_bytes(data['filesize'])}")
-
-    #
-    # AI Metadata
-    #
-
-    print_section("AI Metadata")
-
-    if data["ai"] is None:
-
-        print("None")
-
-    else:
-
-        ai = data["ai"]
-
-        print("Prompt")
-        print(f"  {ai['prompt']}")
+        except UnidentifiedImageError:
+            print(
+                f"img-data: {args.image}: not a supported image file",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         print()
 
-        print("Negative Prompt")
-        print(f"  {ai['negative_prompt']}")
+        print("Image Information")
+        print("=" * 60)
 
-        print()
+        print(f"Filename   : {data['filename']}")
+        print(f"Format     : {data['format']}")
+        print(f"Mode       : {data['mode']}")
+        print(f"Resolution : {data['width']} x {data['height']}")
+        print(f"File Size  : {format_bytes(data['filesize'])}")
 
-        print("Generation Settings")
+        if data["ai"]:
+            print()
+            print("AI Metadata")
+            print("-" * 60)
 
-        if ai["settings"]:
+            ai = data["ai"]
 
-            for key, value in ai["settings"].items():
-                print(f"  {key}: {value}")
-
-        else:
-
-            print("  None")
-
-        print()
-
-        print("Plugins")
-
-        if ai["plugins"]:
-
-            for plugin, fields in ai["plugins"].items():
-
-                print(f"  {plugin}")
-
-                for key, value in fields.items():
-                    print(f"    {key}: {value}")
-
+            if ai["prompt"]:
+                print("Prompt")
+                print(f"  {ai['prompt']}")
                 print()
 
+            if ai["negative_prompt"]:
+                print("Negative Prompt")
+                print(f"  {ai['negative_prompt']}")
+                print()
+
+            if ai["settings"]:
+                print("Generation Settings")
+                for key, value in ai["settings"].items():
+                    print(f"  {key}: {value}")
+                print()
+
+            if ai["plugins"]:
+                print("Plugins")
+                for plugin, settings in ai["plugins"].items():
+                    print(f"  {plugin}")
+                    for key, value in settings.items():
+                        print(f"    {key}: {value}")
+                print()
+
+            print("Other Metadata")
+            print("-" * 60)
+
+            if ai["other"]:
+                for key, value in ai["other"].items():
+                    print(f"{key}: {value}")
+            else:
+                print("None")
+
         else:
+            print()
+            print("PNG Metadata")
+            print("-" * 60)
 
-            print("  None")
+            if data["png_info"]:
+                for key, value in data["png_info"].items():
+                    print(f"{key}: {value}")
+            else:
+                print("None")
 
-    #
-    # Other PNG Metadata
-    #
+        print()
+        print("EXIF Metadata")
+        print("-" * 60)
 
-    print_section("Other Metadata")
+        if data["exif"]:
+            for key, value in data["exif"].items():
+                print(f"{key}: {value}")
+        else:
+            print("None")
 
-    other_png = dict(data["png_info"])
 
-    other_png.pop("parameters", None)
-
-    if other_png:
-
-        for key, value in other_png.items():
-            print(f"{key}: {value}")
-
-    else:
-
-        print("None")
-
-    #
-    # EXIF
-    #
-
-    print_section("EXIF Metadata")
-
-    if data["exif"]:
-
-        for key, value in data["exif"].items():
-            print(f"{key}: {value}")
-
-    else:
-
-        print("None")
+if __name__ == "__main__":
+    main()
