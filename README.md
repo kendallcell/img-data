@@ -69,3 +69,57 @@ pretty and enjoyable to browse.
 > "Your perl regex expressions look lovely!"
 >
 > - said nobody ever.
+
+## Design Elements and Code Structure
+
+img-data is intentionally organized into small, focused modules. Each module has
+a single responsibility and is named after what it does, rather than the data it
+contains.
+
+```text
+cli.py
+        Command-line interface
+
+inspector.py
+        Coordinates inspection
+
+ai_inspector.py
+        Inspects AI metadata
+
+exif_inspector.py
+        Inspects EXIF metadata
+
+stripper.py
+        Removes metadata
+```
+
+The project directory is organized to keep development tools, test data, and
+application code separate.
+
+```text
+src/
+        Application source code.
+
+ci-scripts/
+        Developer convenience scripts used during local development.
+        These run formatting, linting, and the automated test suite before
+        code is committed.
+
+tests/
+        Automated regression and unit tests.
+
+tests/data/
+        Primary collection of specimen images used for parser development
+        and regression testing.
+
+tests/data/other/
+        Additional real-world images from other sources and AI generators.
+        These help ensure that img-data remains generator-independent and
+        continues to work correctly with metadata found in the wild.
+```
+
+A guiding design principle of img-data is to separate **inspection** from
+**modification**. Inspection modules read, decode, classify, and present
+metadata. Metadata removal is implemented separately. This separation keeps the
+code easier to understand, simplifies testing, and allows new inspection
+features to be developed without affecting stripping functionality.
