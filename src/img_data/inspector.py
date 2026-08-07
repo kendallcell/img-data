@@ -3,10 +3,9 @@ inspector.py
 
 Coordinates image metadata inspection.
 
-This module opens an image, gathers metadata from the available containers,
-locates AI generation metadata, delegates specialized inspection work, and
-returns a structured dictionary for presentation by the command-line
-interface.
+This module opens an image, delegates specialized metadata inspection, locates
+AI generation metadata, and returns a structured dictionary for presentation
+by the command-line interface.
 """
 
 from pathlib import Path
@@ -17,6 +16,7 @@ from .ai_inspector import (
     looks_like_ai_metadata,
     parse_ai_metadata,
 )
+from .container_inspector import collect_container_metadata
 from .exif_inspector import (
     collect_exif_metadata,
     prepare_exif_for_display,
@@ -34,8 +34,8 @@ def inspect_image(filename: str) -> dict:
     Read an image and return structured metadata.
 
     AI metadata is detected independently of the image format. It may come
-    from a PNG ``parameters`` text chunk or from an EXIF text field such as
-    ``UserComment``.
+    from container metadata such as a PNG ``parameters`` text chunk or from
+    an EXIF text field such as ``UserComment``.
 
     Parameters
     ----------
@@ -51,7 +51,7 @@ def inspect_image(filename: str) -> dict:
     path = Path(filename)
 
     with Image.open(path) as img:
-        container_info = dict(img.info)
+        container_info = collect_container_metadata(img)
         exif = collect_exif_metadata(img)
 
         raw_ai_text, ai_source = extract_ai_metadata(
@@ -84,19 +84,15 @@ def extract_ai_metadata(
     exif: dict,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """
-    Search available metadata containers for AI generation information.
+    Search available metadata sources for AI generation information.
 
-    PNG ``parameters`` metadata is checked first. EXIF text fields are then
-    checked for text that resembles AI generation metadata.
-
-    The AI inspector does not care where the raw text originated. This
-    function acts as the bridge between image metadata containers and the
-    specialized AI parser.
+    Container ``parameters`` metadata is checked first. EXIF text fields are
+    then checked for text that resembles AI generation metadata.
 
     Parameters
     ----------
     container_info : dict
-        Pillow image ``info`` dictionary.
+        Container metadata collected from Pillow.
 
     exif : dict
         Human-readable EXIF metadata.

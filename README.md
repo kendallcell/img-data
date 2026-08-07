@@ -3,7 +3,7 @@
 img-data is a command-line utility for inspecting, understanding, and optionally
 removing (scrubbing) image metadata while leaving image content untouched. It is
 exceptionally good at presenting AI image generation data, EXIF data and other
-embeded data (Container metadata, XMP, ICC)
+embedded data (Container metadata, XMP, ICC)
 
 img-data is designed to follow usage patterns of good \*nix command-line tools
 
