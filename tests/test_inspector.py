@@ -48,9 +48,32 @@ def test_all_specimen_images_can_be_inspected(image_path):
     assert data["format"] in {"PNG", "JPEG"}
     assert data["width"] > 0
     assert data["height"] > 0
-    assert "png_info" in data
+    assert "container" in data
     assert "exif" in data
     assert "ai" in data
+
+
+def test_inspection_uses_container_schema_name():
+    data = inspect_image(DATA_DIR / "Attorney1.png")
+
+    assert "container" in data
+    assert "png_info" not in data
+
+
+def test_inspector_returns_expected_top_level_schema():
+    data = inspect_image(DATA_DIR / "Attorney1.png")
+
+    assert set(data) == {
+        "filename",
+        "filesize",
+        "format",
+        "mode",
+        "width",
+        "height",
+        "container",
+        "exif",
+        "ai",
+    }
 
 
 def test_image_without_ai_metadata_returns_none():

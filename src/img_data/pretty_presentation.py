@@ -112,17 +112,17 @@ def print_container_metadata(data: dict) -> None:
     if data["ai"]:
         return
 
-    container_info = data["png_info"]
+    container = data["container"]
 
     print()
     print("Container Metadata")
     print("-" * 60)
 
-    if not container_info:
+    if not container:
         print("None")
         return
 
-    sections = classify_container_metadata(container_info)
+    sections = classify_container_metadata(container)
 
     if not sections:
         print("None")

@@ -13,6 +13,7 @@ import sys
 from PIL import UnidentifiedImageError
 
 from .inspector import inspect_image
+from .json_presentation import print_json_inspection
 from .pretty_presentation import print_pretty_inspection
 
 
@@ -33,7 +34,16 @@ def main():
         help="Inspect image metadata.",
     )
 
-    inspect_parser.add_argument("image")
+    inspect_parser.add_argument(
+        "image",
+        help="Image file to inspect.",
+    )
+
+    inspect_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output inspection results as compact JSON.",
+    )
 
     args = parser.parse_args()
 
@@ -62,7 +72,10 @@ def main():
             )
             sys.exit(1)
 
-        print_pretty_inspection(data)
+        if args.json:
+            print_json_inspection(data)
+        else:
+            print_pretty_inspection(data)
 
 
 if __name__ == "__main__":

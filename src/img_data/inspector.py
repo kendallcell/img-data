@@ -51,11 +51,11 @@ def inspect_image(filename: str) -> dict:
     path = Path(filename)
 
     with Image.open(path) as img:
-        container_info = collect_container_metadata(img)
+        container = collect_container_metadata(img)
         exif = collect_exif_metadata(img)
 
         raw_ai_text, ai_source = extract_ai_metadata(
-            container_info,
+            container,
             exif,
         )
 
@@ -73,14 +73,14 @@ def inspect_image(filename: str) -> dict:
             "mode": img.mode,
             "width": img.width,
             "height": img.height,
-            "png_info": container_info,
+            "container": container,
             "exif": display_exif,
             "ai": ai,
         }
 
 
 def extract_ai_metadata(
-    container_info: dict,
+    container: dict,
     exif: dict,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """
@@ -91,7 +91,7 @@ def extract_ai_metadata(
 
     Parameters
     ----------
-    container_info : dict
+    container : dict
         Container metadata collected from Pillow.
 
     exif : dict
@@ -104,7 +104,7 @@ def extract_ai_metadata(
         when no AI metadata is found.
     """
 
-    parameters = container_info.get("parameters")
+    parameters = container.get("parameters")
 
     if isinstance(parameters, str) and looks_like_ai_metadata(parameters):
         return parameters, ("container", "parameters")

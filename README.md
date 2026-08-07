@@ -150,3 +150,36 @@ A guiding design principle of img-data is to separate **inspection** from
 metadata. Metadata removal is implemented separately. This separation keeps the
 code easier to understand, simplifies testing, and allows new inspection
 features to be developed without affecting stripping functionality.
+
+## Working with JSON output
+
+The `--json` option is intended for use with scripts and other tools.
+
+Each JSON document is a single line. For human readable JSON, pipe it through a
+formatter.
+
+For example, using `jq`:
+
+img-data inspect --json Attorney2.png | jq
+
+If jq isn't installed on your system, you can often add it with:
+
+apt install jq
+
+## Extending img-data for Additional Output Formats
+
+img-data separates **inspection** from **presentation**.
+
+The inspection modules produce a structured Python dictionary describing the
+image. Presentation modules are responsible only for rendering that data for a
+particular audience.
+
+Adding a new output format is typically straightforward:
+
+1. Add a new presentation module (for example, `xml_presentation.py` or
+   `yaml_presentation.py`).
+2. Add a command-line option in `cli.py`.
+3. Dispatch the structured inspection data to the new presentation module.
+
+In most cases, the inspection modules do not need to change because all image
+metadata is already collected before presentation begins.
