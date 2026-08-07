@@ -51,6 +51,22 @@ img-data strip is a metadata "scrubber"
 img-data strip has options for stripping just ai meta-data or just EXIF
 meta-data or both.
 
+## AI and EXIF Privacy Scrubbing
+
+The goal of `img-data strip --ai` is the removal of ALL AI metadata
+
+The goal of `img-data strip --exif` is privacy rather than forensic
+preservation.
+
+Metadata that may identify a person, device, location, editing workflow, or
+contains human-entered comments is removed.
+
+Technical image metadata that describes how the image was captured (such as
+exposure settings, orientation, color space, and resolution) is preserved
+whenever possible.
+
+The image pixels themselves are never modified.
+
 ## Acknowledgements
 
 img-data was conceived and is maintained by Kendall Dugger.
