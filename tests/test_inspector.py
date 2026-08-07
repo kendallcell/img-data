@@ -122,6 +122,66 @@ def test_court2_always_contains_other_dictionary():
     assert ai["other"] == {}
 
 
+def test_attorney8_detects_ai_metadata_from_jpeg_exif():
+    data = inspect_image(OTHER_DATA_DIR / "Attorney8.jpeg")
+    ai = data["ai"]
+
+    assert data["format"] == "JPEG"
+    assert ai is not None
+    assert ai["prompt"] == "female lawyer."
+
+
+def test_attorney8_parses_negative_prompt_from_exif():
+    data = inspect_image(OTHER_DATA_DIR / "Attorney8.jpeg")
+    ai = data["ai"]
+
+    assert ai is not None
+    assert ai["negative_prompt"] == "low quality,  bad resolution"
+
+
+def test_attorney8_parses_generation_settings_from_exif():
+    data = inspect_image(OTHER_DATA_DIR / "Attorney8.jpeg")
+    ai = data["ai"]
+
+    assert ai is not None
+    assert ai["settings"]["Steps"] == "25"
+    assert ai["settings"]["Sampler"] == "DPM++ 2M"
+    assert ai["settings"]["CFG scale"] == "7"
+    assert ai["settings"]["Seed"] == "597991048"
+    assert ai["settings"]["Size"] == "832x1216"
+    assert ai["settings"]["Clip skip"] == "2"
+
+
+def test_attorney8_preserves_civitai_resources():
+    data = inspect_image(OTHER_DATA_DIR / "Attorney8.jpeg")
+    ai = data["ai"]
+
+    assert ai is not None
+
+    expected = (
+        '[{"type":"checkpoint","modelVersionId":128078},'
+        '{"type":"lora","weight":1,"modelVersionId":293991}]'
+    )
+
+    assert ai["other"]["Civitai resources"] == expected
+
+
+def test_attorney8_does_not_duplicate_ai_usercomment_in_exif_output():
+    data = inspect_image(OTHER_DATA_DIR / "Attorney8.jpeg")
+
+    assert "UserComment" not in data["exif"]
+
+
+def test_attorney8_preserves_raw_ai_metadata():
+    data = inspect_image(OTHER_DATA_DIR / "Attorney8.jpeg")
+    ai = data["ai"]
+
+    assert ai is not None
+    assert "female lawyer." in ai["raw"]
+    assert "Negative prompt:" in ai["raw"]
+    assert "Civitai resources:" in ai["raw"]
+
+
 def test_parser_returns_consistent_schema():
     metadata = (
         "A test image\n"
