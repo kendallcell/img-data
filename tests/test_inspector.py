@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from img_data.inspector import (
-    inspect_image,
+from img_data.ai_inspector import (
     parse_ai_metadata,
     tokenize_settings,
 )
+from img_data.inspector import inspect_image
 
 DATA_DIR = Path("tests/data")
 OTHER_DATA_DIR = DATA_DIR / "other"
