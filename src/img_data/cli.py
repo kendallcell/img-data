@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PIL import UnidentifiedImageError
 
+from .exif_stripper import strip_exif_metadata
 from .inspector import inspect_image
 from .json_presentation import print_json_inspection
 from .pretty_presentation import print_pretty_inspection
@@ -58,10 +59,18 @@ def main():
         help="Image file to strip.",
     )
 
-    strip_parser.add_argument(
+    strip_options = strip_parser.add_mutually_exclusive_group()
+
+    strip_options.add_argument(
         "--ai",
         action="store_true",
         help="Remove AI generation metadata.",
+    )
+
+    strip_options.add_argument(
+        "--exif",
+        action="store_true",
+        help="Remove privacy-sensitive EXIF and related metadata.",
     )
 
     strip_parser.add_argument(
@@ -105,18 +114,20 @@ def run_inspect_command(args) -> None:
 
 def run_strip_command(args) -> None:
     """
-    Run the metadata stripping command.
+    Run the requested metadata stripping command.
     """
 
-    if not args.ai:
+    if not args.ai and not args.exif:
         print(
-            "img-data: strip: specify metadata to remove with --ai",
+            "img-data: strip: specify metadata to remove with --ai or --exif",
             file=sys.stderr,
         )
         sys.exit(1)
 
+    strip_function = select_strip_function(args)
+
     try:
-        output_path = strip_ai_metadata(
+        output_path = strip_function(
             args.image,
             force=args.force,
         )
@@ -129,7 +140,7 @@ def run_strip_command(args) -> None:
             return
 
         try:
-            output_path = strip_ai_metadata(
+            output_path = strip_function(
                 args.image,
                 output_filename=str(destination),
                 force=True,
@@ -154,7 +165,21 @@ def run_strip_command(args) -> None:
         )
         sys.exit(1)
 
-    print_strip_report(output_path)
+    print_strip_report(
+        output_path,
+        args,
+    )
+
+
+def select_strip_function(args):
+    """
+    Select the stripping implementation requested by the user.
+    """
+
+    if args.ai:
+        return strip_ai_metadata
+
+    return strip_exif_metadata
 
 
 def extract_existing_path(error: FileExistsError) -> Path:
@@ -197,18 +222,34 @@ def confirm_overwrite(path: Path) -> bool:
         print("Please answer 'y' or 'n'.")
 
 
-def print_strip_report(output_path: Path) -> None:
+def print_strip_report(
+    output_path: Path,
+    args,
+) -> None:
     """
     Print a concise report describing the completed strip operation.
     """
 
     print()
     print("Removed:")
-    print("  AI metadata")
+
+    if args.ai:
+        print("  AI metadata")
+
+    elif args.exif:
+        print("  Personal metadata")
+        print("  Location metadata")
+        print("  Device-identifying metadata")
+        print("  Comments and editing information")
 
     print()
     print("Preserved:")
-    print("  Other metadata where supported")
+
+    if args.exif:
+        print("  Technical image metadata")
+    else:
+        print("  Other metadata where supported")
+
     print("  Image dimensions and mode")
     print("  Image content")
 

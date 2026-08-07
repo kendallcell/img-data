@@ -1,8 +1,9 @@
 """
 Tests for the ``img-data strip`` command.
 
-These tests exercise command-line stripping behavior, including output
-creation, overwrite prompting, cancellation, and forced overwrites.
+These tests exercise command-line stripping behavior, including AI stripping,
+privacy-oriented EXIF stripping, output creation, overwrite prompting,
+cancellation, and forced overwrites.
 """
 
 import shutil
@@ -88,6 +89,141 @@ def test_strip_ai_creates_default_output_file(
     assert result["ai"] is None
 
 
+def test_strip_exif_creates_default_output_file(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney1-EXIF-Stripped.png"
+
+    assert stderr == ""
+    assert destination.exists()
+    assert f"  {destination}" in stdout
+
+
+def test_strip_exif_reports_removed_privacy_categories(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        str(source),
+    )
+
+    assert stderr == ""
+    assert "Removed:" in stdout
+    assert "Personal metadata" in stdout
+    assert "Location metadata" in stdout
+    assert "Device-identifying metadata" in stdout
+    assert "Comments and editing information" in stdout
+
+
+def test_strip_exif_reports_preserved_technical_metadata(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        str(source),
+    )
+
+    assert stderr == ""
+    assert "Preserved:" in stdout
+    assert "Technical image metadata" in stdout
+    assert "Image dimensions and mode" in stdout
+    assert "Image content" in stdout
+
+
+def test_strip_exif_output_removes_private_metadata(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney1-EXIF-Stripped.png"
+    result = inspect_image(destination)
+
+    assert "Comment" not in result["container"]
+    assert "xmp" not in result["container"]
+    assert "XML:com.adobe.xmp" not in result["container"]
+    assert "Raw profile type exif" not in result["container"]
+
+    assert "ImageDescription" not in result["exif"]
+    assert "UserComment" not in result["exif"]
+    assert "Software" not in result["exif"]
+    assert "DateTime" not in result["exif"]
+
+
+def test_strip_exif_output_preserves_technical_metadata(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney1-EXIF-Stripped.png"
+    result = inspect_image(destination)
+
+    assert result["exif"]["Orientation"] == 1
+    assert result["exif"]["ColorSpace"] == 1
+    assert result["exif"]["ImageWidth"] == 896
+    assert result["exif"]["ImageLength"] == 1152
+
+
 @pytest.mark.parametrize(
     "response",
     [
@@ -166,7 +302,7 @@ def test_confirm_overwrite_reprompts_after_invalid_response(
     assert "Please answer 'y' or 'n'." in captured.out
 
 
-def test_existing_output_enter_overwrites(
+def test_existing_ai_output_enter_overwrites(
     monkeypatch,
     capsys,
     tmp_path,
@@ -199,6 +335,41 @@ def test_existing_output_enter_overwrites(
     result = inspect_image(destination)
 
     assert result["ai"] is None
+
+
+def test_existing_exif_output_enter_overwrites(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    destination = tmp_path / "Attorney1-EXIF-Stripped.png"
+    destination.write_bytes(b"old output")
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: "",
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        str(source),
+    )
+
+    assert stderr == ""
+    assert f"{destination} already exists." in stdout
+    assert "Removed:" in stdout
+
+    result = inspect_image(destination)
+
+    assert "Comment" not in result["container"]
 
 
 def test_existing_output_no_cancels_without_overwriting(
@@ -236,7 +407,7 @@ def test_existing_output_no_cancels_without_overwriting(
     assert destination.read_bytes() == original_contents
 
 
-def test_force_overwrites_without_prompt(
+def test_force_overwrites_ai_without_prompt(
     monkeypatch,
     capsys,
     tmp_path,
@@ -272,6 +443,45 @@ def test_force_overwrites_without_prompt(
     result = inspect_image(destination)
 
     assert result["ai"] is None
+
+
+def test_force_overwrites_exif_without_prompt(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    destination = tmp_path / "Attorney1-EXIF-Stripped.png"
+    destination.write_bytes(b"old output")
+
+    def fail_if_prompted(prompt):
+        raise AssertionError(f"--force unexpectedly prompted: {prompt}")
+
+    monkeypatch.setattr(
+        "builtins.input",
+        fail_if_prompted,
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--exif",
+        "--force",
+        str(source),
+    )
+
+    assert stderr == ""
+    assert "Removed:" in stdout
+
+    result = inspect_image(destination)
+
+    assert "Comment" not in result["container"]
+    assert "UserComment" not in result["exif"]
 
 
 def test_short_force_option_overwrites_without_prompt(
@@ -339,4 +549,39 @@ def test_strip_without_metadata_option_exits_with_error(
 
     assert exc_info.value.code == 1
     assert captured.out == ""
-    assert captured.err == "img-data: strip: specify metadata to remove with --ai\n"
+    assert (
+        captured.err
+        == "img-data: strip: specify metadata to remove with --ai or --exif\n"
+    )
+
+
+def test_ai_and_exif_options_are_mutually_exclusive(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "img-data",
+            "strip",
+            "--ai",
+            "--exif",
+            str(source),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert captured.out == ""
+    assert "not allowed with argument" in captured.err
