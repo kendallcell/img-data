@@ -10,7 +10,7 @@ than regular-expression magic so future contributors can easily extend it.
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import ExifTags, Image
 
 # ---------------------------------------------------------------------------
 # Parser configuration
@@ -53,6 +53,15 @@ KNOWN_PLUGIN_PREFIXES = (
     "Dynamic thresholding",
 )
 
+EXIF_IFD_TAG = 0x8769
+GPS_IFD_TAG = 0x8825
+
+AI_EXIF_TEXT_FIELDS = (
+    "UserComment",
+    "ImageDescription",
+    "Comment",
+)
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -63,6 +72,10 @@ def inspect_image(filename: str) -> dict:
     """
     Read an image and return structured metadata.
 
+    AI metadata is detected independently of the image format. It may come
+    from a PNG ``parameters`` text chunk or from an EXIF text field such as
+    ``UserComment``.
+
     Parameters
     ----------
     filename : str
@@ -71,16 +84,26 @@ def inspect_image(filename: str) -> dict:
     Returns
     -------
     dict
-        Structured image, AI, PNG, and EXIF metadata.
+        Structured image, AI, file-container, and EXIF metadata.
     """
 
     path = Path(filename)
 
     with Image.open(path) as img:
-        png_info = dict(img.info)
-        exif = dict(img.getexif())
+        container_info = dict(img.info)
+        exif = collect_exif_metadata(img)
 
-        ai = parse_ai_metadata(png_info.get("parameters"))
+        raw_ai_text, ai_source = extract_ai_metadata(
+            container_info,
+            exif,
+        )
+
+        ai = parse_ai_metadata(raw_ai_text)
+
+        display_exif = prepare_exif_for_display(
+            exif,
+            ai_source,
+        )
 
         return {
             "filename": path.name,
@@ -89,10 +112,344 @@ def inspect_image(filename: str) -> dict:
             "mode": img.mode,
             "width": img.width,
             "height": img.height,
-            "png_info": png_info,
-            "exif": exif,
+            "png_info": container_info,
+            "exif": display_exif,
             "ai": ai,
         }
+
+
+# ---------------------------------------------------------------------------
+# Metadata collection
+# ---------------------------------------------------------------------------
+
+
+def collect_exif_metadata(img: Image.Image) -> dict:
+    """
+    Collect EXIF metadata using human-readable tag names.
+
+    Pillow's top-level EXIF object may contain references to nested EXIF
+    Image File Directories (IFDs). Those nested fields are collected as
+    well so values such as ``UserComment`` are available to the inspector.
+
+    Parameters
+    ----------
+    img : PIL.Image.Image
+        Open Pillow image.
+
+    Returns
+    -------
+    dict
+        EXIF fields keyed by human-readable tag names.
+    """
+
+    exif = img.getexif()
+
+    if not exif:
+        return {}
+
+    metadata = {}
+
+    for tag_id, value in exif.items():
+        tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+
+        if tag_id in (EXIF_IFD_TAG, GPS_IFD_TAG):
+            continue
+
+        metadata[tag_name] = decode_exif_value(
+            tag_name,
+            value,
+        )
+
+    collect_nested_exif_ifd(
+        exif,
+        EXIF_IFD_TAG,
+        metadata,
+    )
+
+    collect_gps_ifd(
+        exif,
+        metadata,
+    )
+
+    return metadata
+
+
+def collect_nested_exif_ifd(
+    exif,
+    ifd_tag: int,
+    metadata: dict,
+) -> None:
+    """
+    Add fields from a nested EXIF IFD to the metadata dictionary.
+    """
+
+    try:
+        nested_ifd = exif.get_ifd(ifd_tag)
+    except (KeyError, TypeError, ValueError):
+        return
+
+    if not nested_ifd:
+        return
+
+    for tag_id, value in nested_ifd.items():
+        tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+
+        metadata[tag_name] = decode_exif_value(
+            tag_name,
+            value,
+        )
+
+
+def collect_gps_ifd(
+    exif,
+    metadata: dict,
+) -> None:
+    """
+    Collect GPS EXIF fields using readable GPS tag names.
+    """
+
+    try:
+        gps_ifd = exif.get_ifd(GPS_IFD_TAG)
+    except (KeyError, TypeError, ValueError):
+        return
+
+    if not gps_ifd:
+        return
+
+    gps_metadata = {}
+
+    for tag_id, value in gps_ifd.items():
+        tag_name = ExifTags.GPSTAGS.get(
+            tag_id,
+            str(tag_id),
+        )
+        gps_metadata[tag_name] = value
+
+    if gps_metadata:
+        metadata["GPSInfo"] = gps_metadata
+
+
+def decode_exif_value(
+    tag_name: str,
+    value,
+):
+    """
+    Decode EXIF values that require special handling.
+
+    ``UserComment`` uses an EXIF-specific eight-byte encoding prefix and is
+    not safely decoded with a normal UTF-8 conversion.
+    """
+
+    if tag_name == "UserComment" and isinstance(value, bytes):
+        return decode_exif_user_comment(value)
+
+    return value
+
+
+def decode_exif_user_comment(value: bytes) -> str:
+    """
+    Decode an EXIF UserComment byte string.
+
+    EXIF UserComment begins with an eight-byte character-code prefix such
+    as ``ASCII`` or ``UNICODE``. Unicode comments found in AI-generated
+    JPEG files may use either UTF-16 byte order, so the payload is examined
+    before choosing a decoder.
+
+    Parameters
+    ----------
+    value : bytes
+        Raw EXIF UserComment value.
+
+    Returns
+    -------
+    str
+        Decoded comment text.
+    """
+
+    if not value:
+        return ""
+
+    if len(value) < 8:
+        return decode_bytes_fallback(value)
+
+    prefix = value[:8]
+    payload = value[8:]
+
+    if prefix.startswith(b"ASCII"):
+        return payload.rstrip(b"\x00").decode(
+            "ascii",
+            errors="replace",
+        )
+
+    if prefix.startswith(b"UNICODE"):
+        return decode_exif_unicode_payload(payload)
+
+    if prefix.startswith(b"JIS"):
+        return payload.rstrip(b"\x00").decode(
+            "shift_jis",
+            errors="replace",
+        )
+
+    return decode_bytes_fallback(value)
+
+
+def decode_exif_unicode_payload(payload: bytes) -> str:
+    """
+    Decode a UTF-16 EXIF UserComment payload.
+
+    A byte-order mark is honored when present. Otherwise, the placement of
+    null bytes is used to distinguish big-endian from little-endian text.
+    """
+
+    payload = payload.rstrip(b"\x00")
+
+    if not payload:
+        return ""
+
+    if payload.startswith(b"\xfe\xff"):
+        return payload.decode(
+            "utf-16-be",
+            errors="replace",
+        ).lstrip("\ufeff")
+
+    if payload.startswith(b"\xff\xfe"):
+        return payload.decode(
+            "utf-16-le",
+            errors="replace",
+        ).lstrip("\ufeff")
+
+    sample = payload[: min(len(payload), 64)]
+
+    even_nulls = sample[0::2].count(0)
+    odd_nulls = sample[1::2].count(0)
+
+    if even_nulls > odd_nulls:
+        encoding = "utf-16-be"
+    else:
+        encoding = "utf-16-le"
+
+    return payload.decode(
+        encoding,
+        errors="replace",
+    ).lstrip("\ufeff")
+
+
+def decode_bytes_fallback(value: bytes) -> str:
+    """
+    Decode an unknown byte string without raising a decoding exception.
+    """
+
+    for encoding in ("utf-8", "utf-16", "latin-1"):
+        try:
+            return value.rstrip(b"\x00").decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+    return value.decode(
+        "latin-1",
+        errors="replace",
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI metadata discovery
+# ---------------------------------------------------------------------------
+
+
+def extract_ai_metadata(
+    container_info: dict,
+    exif: dict,
+) -> tuple[str | None, tuple[str, str] | None]:
+    """
+    Search available metadata containers for AI generation information.
+
+    PNG ``parameters`` metadata is checked first. EXIF text fields are then
+    checked for text that resembles Stable Diffusion / Forge generation
+    metadata.
+
+    Parameters
+    ----------
+    container_info : dict
+        Pillow image ``info`` dictionary.
+
+    exif : dict
+        Human-readable EXIF metadata.
+
+    Returns
+    -------
+    tuple
+        Raw AI metadata text and a source descriptor. Both values are None
+        when no AI metadata is found.
+    """
+
+    parameters = container_info.get("parameters")
+
+    if isinstance(parameters, str) and looks_like_ai_metadata(parameters):
+        return parameters, ("container", "parameters")
+
+    for field_name in AI_EXIF_TEXT_FIELDS:
+        value = exif.get(field_name)
+
+        if isinstance(value, str) and looks_like_ai_metadata(value):
+            return value, ("exif", field_name)
+
+    return None, None
+
+
+def looks_like_ai_metadata(text: str) -> bool:
+    """
+    Return True when text resembles AI generation metadata.
+
+    We intentionally require multiple generation-related markers rather
+    than assuming every comment containing the word "Steps" is AI data.
+    """
+
+    if not text:
+        return False
+
+    required_marker = "Steps:"
+
+    supporting_markers = (
+        "Sampler:",
+        "Seed:",
+        "CFG scale:",
+        "Negative prompt:",
+        "Model:",
+        "Size:",
+    )
+
+    if required_marker not in text:
+        return False
+
+    return any(marker in text for marker in supporting_markers)
+
+
+def prepare_exif_for_display(
+    exif: dict,
+    ai_source: tuple[str, str] | None,
+) -> dict:
+    """
+    Remove AI metadata from the normal EXIF display when already presented
+    in the AI section.
+
+    The AI text itself is not lost; ``parse_ai_metadata`` preserves the
+    original text in the AI dictionary's ``raw`` field.
+    """
+
+    display_exif = dict(exif)
+
+    if ai_source is None:
+        return display_exif
+
+    source_type, source_name = ai_source
+
+    if source_type == "exif":
+        display_exif.pop(
+            source_name,
+            None,
+        )
+
+    return display_exif
 
 
 # ---------------------------------------------------------------------------
@@ -133,14 +490,17 @@ def parse_ai_metadata(text: str | None) -> dict | None:
 
         if plugin_match is not None:
             plugin_name, plugin_field = plugin_match
+
             add_plugin_value(
                 plugins,
                 plugin_name,
                 plugin_field,
                 value,
             )
+
         elif key in CORE_SETTING_NAMES:
             settings[key] = value
+
         else:
             other[key] = value
 
@@ -279,7 +639,10 @@ def tokenize_settings(text: str) -> list[tuple[str, str]]:
             continue
 
         if character == "}":
-            brace_depth = max(0, brace_depth - 1)
+            brace_depth = max(
+                0,
+                brace_depth - 1,
+            )
             current.append(character)
             continue
 
@@ -289,7 +652,10 @@ def tokenize_settings(text: str) -> list[tuple[str, str]]:
             continue
 
         if character == "]":
-            bracket_depth = max(0, bracket_depth - 1)
+            bracket_depth = max(
+                0,
+                bracket_depth - 1,
+            )
             current.append(character)
             continue
 
@@ -299,7 +665,10 @@ def tokenize_settings(text: str) -> list[tuple[str, str]]:
             continue
 
         if character == ")":
-            parenthesis_depth = max(0, parenthesis_depth - 1)
+            parenthesis_depth = max(
+                0,
+                parenthesis_depth - 1,
+            )
             current.append(character)
             continue
 
@@ -311,13 +680,19 @@ def tokenize_settings(text: str) -> list[tuple[str, str]]:
         )
 
         if is_top_level_comma:
-            append_token_item(items, current)
+            append_token_item(
+                items,
+                current,
+            )
             current = []
             continue
 
         current.append(character)
 
-    append_token_item(items, current)
+    append_token_item(
+        items,
+        current,
+    )
 
     tokens: list[tuple[str, str]] = []
 
@@ -325,17 +700,29 @@ def tokenize_settings(text: str) -> list[tuple[str, str]]:
         if ":" not in item:
             continue
 
-        key, value = item.split(":", 1)
+        key, value = item.split(
+            ":",
+            1,
+        )
+
         key = key.strip()
         value = value.strip()
 
         if key:
-            tokens.append((key, value))
+            tokens.append(
+                (
+                    key,
+                    value,
+                )
+            )
 
     return tokens
 
 
-def append_token_item(items: list[str], characters: list[str]) -> None:
+def append_token_item(
+    items: list[str],
+    characters: list[str],
+) -> None:
     """
     Append one completed tokenizer item when it contains non-whitespace text.
     """
@@ -351,7 +738,9 @@ def append_token_item(items: list[str], characters: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def split_plugin_key(key: str) -> tuple[str, str] | None:
+def split_plugin_key(
+    key: str,
+) -> tuple[str, str] | None:
     """
     Split a known plugin-prefixed key into plugin name and field name.
 
@@ -370,7 +759,10 @@ def split_plugin_key(key: str) -> tuple[str, str] | None:
             plugin_field = key[len(prefix) :].strip()
 
             if plugin_field:
-                return plugin_name, plugin_field
+                return (
+                    plugin_name,
+                    plugin_field,
+                )
 
     return None
 
@@ -385,5 +777,9 @@ def add_plugin_value(
     Add one parsed field to a plugin's metadata dictionary.
     """
 
-    plugins.setdefault(plugin_name, {})
+    plugins.setdefault(
+        plugin_name,
+        {},
+    )
+
     plugins[plugin_name][key] = value
