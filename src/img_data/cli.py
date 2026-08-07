@@ -9,6 +9,10 @@ import sys
 
 from PIL import UnidentifiedImageError
 
+from .container_inspector import (
+    classify_container_metadata,
+    friendly_container_field_name,
+)
 from .exif_inspector import classify_exif_metadata
 from .inspector import inspect_image
 from .utils import format_bytes
@@ -94,12 +98,18 @@ def print_ai_metadata(data: dict) -> None:
 
     if ai["prompt"]:
         print("Prompt")
-        print_indented_value(ai["prompt"], 2)
+        print_indented_value(
+            ai["prompt"],
+            2,
+        )
         print()
 
     if ai["negative_prompt"]:
         print("Negative Prompt")
-        print_indented_value(ai["negative_prompt"], 2)
+        print_indented_value(
+            ai["negative_prompt"],
+            2,
+        )
         print()
 
     if ai["settings"]:
@@ -133,11 +143,10 @@ def print_ai_metadata(data: dict) -> None:
 
 def print_container_metadata(data: dict) -> None:
     """
-    Print non-AI metadata stored in the image container.
+    Print container metadata in human-oriented sections.
 
-    The existing structured dictionary key is named ``png_info`` for
-    compatibility with earlier versions of img-data, but Pillow uses the
-    same ``info`` dictionary for multiple image formats.
+    AI generation metadata is presented by the AI inspector and is not
+    repeated here.
     """
 
     if data["ai"]:
@@ -149,11 +158,60 @@ def print_container_metadata(data: dict) -> None:
     print("Container Metadata")
     print("-" * 60)
 
-    if container_info:
-        for key, value in container_info.items():
-            print(f"{key}: {value}")
-    else:
+    if not container_info:
         print("None")
+        return
+
+    sections = classify_container_metadata(container_info)
+
+    if not sections:
+        print("None")
+        return
+
+    first_section = True
+
+    for section_name, fields in sections.items():
+        if not first_section:
+            print()
+
+        print(section_name)
+
+        for key, value in fields.items():
+            friendly_name = friendly_container_field_name(key)
+
+            print_container_field(
+                friendly_name,
+                value,
+                indent=2,
+            )
+
+        first_section = False
+
+
+def print_container_field(
+    key: str,
+    value,
+    indent: int,
+) -> None:
+    """
+    Print one container metadata field.
+    """
+
+    prefix = " " * indent
+
+    if isinstance(value, dict):
+        print(f"{prefix}{key}")
+
+        for child_key, child_value in value.items():
+            print_container_field(
+                str(child_key),
+                child_value,
+                indent + 2,
+            )
+
+        return
+
+    print(f"{prefix}{key}: " f"{format_display_value(value)}")
 
 
 def print_exif_metadata(data: dict) -> None:
@@ -199,7 +257,7 @@ def print_exif_field(
     indent: int,
 ) -> None:
     """
-    Print one EXIF field, including nested dictionaries and sequences.
+    Print one EXIF field, including nested dictionaries.
     """
 
     prefix = " " * indent
@@ -216,7 +274,7 @@ def print_exif_field(
 
         return
 
-    print(f"{prefix}{key}: {format_display_value(value)}")
+    print(f"{prefix}{key}: " f"{format_display_value(value)}")
 
 
 def print_indented_value(
