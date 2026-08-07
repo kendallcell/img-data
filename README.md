@@ -1,8 +1,34 @@
 ## img-data
 
-img-data is a command-line utility for inspecting and scrubbing AI and EXIF
-metadata from image files without modifying the image pixels. img-data is
-designed to follow usage patterns of good \*nix command-line tools
+img-data is a command-line utility for inspecting, understanding, and optionally
+removing (scrubbing) image metadata while leaving image content untouched. It is
+exceptionally good at presenting AI image generation data, EXIF data and other
+embeded data (Container metadata, XMP, ICC)
+
+img-data is designed to follow usage patterns of good \*nix command-line tools
+
+## Supported Metadata
+
+````text
+AI metadata
+    Forge
+    AUTOMATIC1111
+    Stable Diffusion
+    ComfyUI (planned)
+
+EXIF metadata
+    JPEG
+    PNG EXIF
+
+Container metadata
+    PNG chunks
+    JPEG APP segments
+
+Future
+
+XMP
+ICC
+```text
 
 ## Project Goals
 
@@ -35,7 +61,8 @@ ChatGPT (GPT-5.5).
 
 The project was intentionally developed using a test-driven,
 implementation-focused workflow with continuous integration, automated
-formatting, and incremental feature development, using GitHub Actions.
+formatting, and incremental feature development, using PyTest and GitHub
+Actions.
 
 ## Core Project Principles are:
 
@@ -61,7 +88,7 @@ img-data follows the Unix philosophy:
 
 Python is definitely NOT as powerful for text processing as perl or a proper
 lexical parser. But nobody enjoys working with those other systems. You write
-the naughty-bits once with python, and that can be more difficult, but once
+the difficult parsing once with python, and that can be more difficult, but once
 those parts are done, the whole rest of the program is infinitely more
 read-able, easier to maintain, people look at your code and think it looks
 pretty and enjoyable to browse.
@@ -91,7 +118,7 @@ exif_inspector.py
 
 stripper.py
         Removes metadata
-```
+````
 
 The project directory is organized to keep development tools, test data, and
 application code separate.
