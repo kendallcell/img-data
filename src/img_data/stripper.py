@@ -14,6 +14,7 @@ from PIL import ExifTags, Image, PngImagePlugin
 
 from .ai_inspector import looks_like_ai_metadata
 from .exif_inspector import decode_exif_user_comment
+from .jpeg_rewriter import rewrite_jpeg_metadata
 
 AI_EXIF_TEXT_FIELDS = (
     "UserComment",
@@ -157,33 +158,25 @@ def save_jpeg_without_ai_metadata(
     destination: Path,
 ) -> None:
     """
-    Save a JPEG after removing EXIF text fields containing AI metadata.
+    Rewrite a JPEG after removing EXIF fields containing AI metadata.
 
-    Other EXIF fields and the ICC profile are preserved.
+    JPEG metadata segments are rewritten directly so the compressed image
+    stream is preserved byte-for-byte.
     """
 
     exif = img.getexif()
 
     remove_ai_exif_fields(exif)
 
-    save_kwargs = {
-        "exif": exif,
-    }
+    exif_bytes = None
 
-    icc_profile = img.info.get("icc_profile")
+    if exif:
+        exif_bytes = exif.tobytes()
 
-    if icc_profile is not None:
-        save_kwargs["icc_profile"] = icc_profile
-
-    dpi = img.info.get("dpi")
-
-    if dpi is not None:
-        save_kwargs["dpi"] = dpi
-
-    img.save(
+    rewrite_jpeg_metadata(
+        Path(img.filename),
         destination,
-        format="JPEG",
-        **save_kwargs,
+        exif_bytes=exif_bytes,
     )
 
 

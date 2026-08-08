@@ -12,6 +12,8 @@ from pathlib import Path
 
 from PIL import ExifTags, Image, PngImagePlugin
 
+from .jpeg_rewriter import rewrite_jpeg_metadata
+
 # ---------------------------------------------------------------------------
 # Privacy policy
 # ---------------------------------------------------------------------------
@@ -278,34 +280,26 @@ def save_jpeg_without_private_metadata(
     destination: Path,
 ) -> None:
     """
-    Save a JPEG after removing privacy-sensitive EXIF metadata.
+    Rewrite a JPEG after removing privacy-sensitive metadata.
 
-    Technical EXIF and ICC profile information is preserved. This currently
-    uses Pillow's JPEG writer; a future metadata-only JPEG write path should
-    replace it so compressed image data can be preserved byte-for-byte.
+    Cleaned EXIF is serialized back into the JPEG while XMP and JPEG comment
+    segments are removed. The compressed image stream and unrelated metadata
+    segments are copied byte-for-byte.
     """
 
     exif = img.getexif()
 
     remove_private_exif_fields(exif)
 
-    save_kwargs = {}
+    exif_bytes = None
 
     if exif:
-        save_kwargs["exif"] = exif
+        exif_bytes = exif.tobytes()
 
-    icc_profile = img.info.get("icc_profile")
-
-    if icc_profile is not None:
-        save_kwargs["icc_profile"] = icc_profile
-
-    dpi = img.info.get("dpi")
-
-    if dpi is not None:
-        save_kwargs["dpi"] = dpi
-
-    img.save(
+    rewrite_jpeg_metadata(
+        Path(img.filename),
         destination,
-        format="JPEG",
-        **save_kwargs,
+        exif_bytes=exif_bytes,
+        remove_xmp=True,
+        remove_comments=True,
     )

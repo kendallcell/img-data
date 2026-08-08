@@ -38,13 +38,21 @@ def test_build_exif_stripped_filename_for_jpeg():
     assert result == Path("example-EXIF-Stripped.jpeg")
 
 
+def test_build_exif_stripped_filename_for_jpg():
+    source = Path("example.jpg")
+
+    result = build_exif_stripped_filename(source)
+
+    assert result == Path("example-EXIF-Stripped.jpg")
+
+
 def test_remove_private_exif_fields_removes_personal_data():
     exif = Image.Exif()
 
-    exif[315] = "Jane Photographer"  # Artist
-    exif[270] = "Personal description"  # ImageDescription
-    exif[305] = "Editing Software"  # Software
-    exif[306] = "2026:08:07 12:00:00"  # DateTime
+    exif[315] = "Jane Photographer"
+    exif[270] = "Personal description"
+    exif[305] = "Editing Software"
+    exif[306] = "2026:08:07 12:00:00"
 
     remove_private_exif_fields(exif)
 
@@ -57,9 +65,9 @@ def test_remove_private_exif_fields_removes_personal_data():
 def test_remove_private_exif_fields_removes_device_identity():
     exif = Image.Exif()
 
-    exif[271] = "Example Camera Company"  # Make
-    exif[272] = "Example Camera Model"  # Model
-    exif[42033] = "BODY-123456"  # BodySerialNumber
+    exif[271] = "Example Camera Company"
+    exif[272] = "Example Camera Model"
+    exif[42033] = "BODY-123456"
 
     remove_private_exif_fields(exif)
 
@@ -71,7 +79,7 @@ def test_remove_private_exif_fields_removes_device_identity():
 def test_remove_private_exif_fields_removes_gps_pointer():
     exif = Image.Exif()
 
-    exif[34853] = 123  # GPSInfo
+    exif[34853] = 123
 
     remove_private_exif_fields(exif)
 
@@ -81,11 +89,11 @@ def test_remove_private_exif_fields_removes_gps_pointer():
 def test_remove_private_exif_fields_preserves_technical_data():
     exif = Image.Exif()
 
-    exif[274] = 1  # Orientation
-    exif[282] = 300  # XResolution
-    exif[283] = 300  # YResolution
-    exif[33434] = 0.008  # ExposureTime
-    exif[33437] = 2.8  # FNumber
+    exif[274] = 1
+    exif[282] = 300
+    exif[283] = 300
+    exif[33434] = 0.008
+    exif[33437] = 2.8
 
     remove_private_exif_fields(exif)
 
@@ -373,6 +381,72 @@ def test_strip_jpeg_output_can_be_opened_by_pillow(tmp_path):
     )
 
     with Image.open(destination) as img:
+        img.load()
+
+        assert img.format == "JPEG"
+
+
+def test_jpg_default_output_preserves_jpg_extension(tmp_path):
+    specimen = OTHER_DATA_DIR / "Attorney6b.jpg"
+    source = tmp_path / specimen.name
+
+    source.write_bytes(specimen.read_bytes())
+
+    destination = strip_exif_metadata(source)
+
+    assert destination.name == "Attorney6b-EXIF-Stripped.jpg"
+    assert destination.suffix == ".jpg"
+    assert destination.exists()
+
+
+def test_strip_jpg_output_can_be_opened_by_pillow(tmp_path):
+    specimen = OTHER_DATA_DIR / "Attorney6b.jpg"
+    source = tmp_path / specimen.name
+
+    source.write_bytes(specimen.read_bytes())
+
+    destination = strip_exif_metadata(source)
+
+    with Image.open(destination) as img:
+        img.load()
+
+        assert img.format == "JPEG"
+
+
+def test_strip_jpg_preserves_dimensions(tmp_path):
+    specimen = OTHER_DATA_DIR / "Attorney6b.jpg"
+    source = tmp_path / specimen.name
+
+    source.write_bytes(specimen.read_bytes())
+
+    original = inspect_image(source)
+
+    destination = strip_exif_metadata(source)
+
+    stripped = inspect_image(destination)
+
+    assert stripped["width"] == original["width"]
+    assert stripped["height"] == original["height"]
+
+
+def test_force_on_jpg_overwrites_same_jpg_destination(tmp_path):
+    specimen = OTHER_DATA_DIR / "Attorney6b.jpg"
+    source = tmp_path / specimen.name
+
+    source.write_bytes(specimen.read_bytes())
+
+    destination = tmp_path / "Attorney6b-EXIF-Stripped.jpg"
+    destination.write_bytes(b"existing output")
+
+    result = strip_exif_metadata(
+        source,
+        force=True,
+    )
+
+    assert result == destination
+    assert result.suffix == ".jpg"
+
+    with Image.open(result) as img:
         img.load()
 
         assert img.format == "JPEG"
