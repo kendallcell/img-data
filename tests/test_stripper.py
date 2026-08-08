@@ -1,13 +1,20 @@
+"""
+Tests for AI metadata stripping.
+
+These tests verify that AI generation metadata can be removed while image
+structure, unrelated metadata, and filename extensions are preserved.
+"""
+
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from img_data.inspector import inspect_image
-from img_data.stripper import (
+from img_data.ai_stripper import (
     build_ai_stripped_filename,
     strip_ai_metadata,
 )
+from img_data.inspector import inspect_image
 
 DATA_DIR = Path("tests/data")
 OTHER_DATA_DIR = DATA_DIR / "other"
@@ -27,6 +34,14 @@ def test_build_ai_stripped_filename_for_jpeg():
     result = build_ai_stripped_filename(source)
 
     assert result == Path("example-AI-Stripped.jpeg")
+
+
+def test_build_ai_stripped_filename_for_jpg():
+    source = Path("example.jpg")
+
+    result = build_ai_stripped_filename(source)
+
+    assert result == Path("example-AI-Stripped.jpg")
 
 
 def test_strip_png_removes_ai_metadata(tmp_path):

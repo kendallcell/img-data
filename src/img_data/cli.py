@@ -14,11 +14,12 @@ from pathlib import Path
 
 from PIL import UnidentifiedImageError
 
+from .ai_stripper import strip_ai_metadata
 from .exif_stripper import strip_exif_metadata
 from .inspector import inspect_image
 from .json_presentation import print_json_inspection
+from .metadata_stripper import strip_all_metadata
 from .pretty_presentation import print_pretty_inspection
-from .stripper import strip_ai_metadata
 
 
 def main():
@@ -73,6 +74,12 @@ def main():
         help="Remove privacy-sensitive EXIF and related metadata.",
     )
 
+    strip_options.add_argument(
+        "--all",
+        action="store_true",
+        help="Remove AI and privacy-sensitive metadata.",
+    )
+
     strip_parser.add_argument(
         "--force",
         "-f",
@@ -117,9 +124,10 @@ def run_strip_command(args) -> None:
     Run the requested metadata stripping command.
     """
 
-    if not args.ai and not args.exif:
+    if not args.ai and not args.exif and not args.all:
         print(
-            "img-data: strip: specify metadata to remove with --ai or --exif",
+            "img-data: strip: specify metadata to remove "
+            "with --ai, --exif, or --all",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -179,7 +187,10 @@ def select_strip_function(args):
     if args.ai:
         return strip_ai_metadata
 
-    return strip_exif_metadata
+    if args.exif:
+        return strip_exif_metadata
+
+    return strip_all_metadata
 
 
 def extract_existing_path(error: FileExistsError) -> Path:
@@ -237,15 +248,16 @@ def print_strip_report(
         print("  AI metadata")
 
     elif args.exif:
-        print("  Personal metadata")
-        print("  Location metadata")
-        print("  Device-identifying metadata")
-        print("  Comments and editing information")
+        print_privacy_removal_report()
+
+    elif args.all:
+        print("  AI metadata")
+        print_privacy_removal_report()
 
     print()
     print("Preserved:")
 
-    if args.exif:
+    if args.exif or args.all:
         print("  Technical image metadata")
     else:
         print("  Other metadata where supported")
@@ -256,6 +268,17 @@ def print_strip_report(
     print()
     print("Output:")
     print(f"  {output_path}")
+
+
+def print_privacy_removal_report() -> None:
+    """
+    Print the privacy-sensitive metadata categories that were removed.
+    """
+
+    print("  Personal metadata")
+    print("  Location metadata")
+    print("  Device-identifying metadata")
+    print("  Comments and editing information")
 
 
 def print_file_not_found(filename: str) -> None:
