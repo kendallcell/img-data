@@ -1,0 +1,81 @@
+name: Build macOS Executables
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      matrix:
+        include:
+          - name: macOS Intel x86_64
+            runner: macos-13
+            artifact: img-data-macos-x86_64
+
+          - name: macOS Apple Silicon arm64
+            runner: macos-14
+            artifact: img-data-macos-arm64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          pip install -e .
+
+      - name: Show build architecture
+        run: |
+          uname -a
+          uname -m
+          python --version
+
+      - name: Build standalone executable
+        run: |
+          pyinstaller \
+            --onefile \
+            --name "${{ matrix.artifact }}" \
+            img_data_launcher.py
+
+      - name: Test executable help
+        run: |
+          ./dist/${{ matrix.artifact }} --help
+
+      - name: Test executable inspection
+        run: |
+          ./dist/${{ matrix.artifact }} inspect tests/data/Attorney1.png
+
+      - name: Test executable stripping
+        run: |
+          cp tests/data/Attorney2.png /tmp/Attorney2.png
+          ./dist/${{ matrix.artifact }} strip --all /tmp/Attorney2.png
+          ./dist/${{ matrix.artifact }} inspect /tmp/Attorney2-All-Stripped.png
+
+      - name: Show executable details
+        run: |
+          ls -lh dist/${{ matrix.artifact }}
+          file dist/${{ matrix.artifact }}
+
+      - name: Upload macOS executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
