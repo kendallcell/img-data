@@ -2,8 +2,8 @@
 Tests for the ``img-data strip`` command.
 
 These tests exercise AI stripping, privacy-oriented EXIF stripping, combined
-stripping, output creation, overwrite prompting, cancellation, and forced
-overwrites.
+stripping, output creation, overwrite prompting, original-file replacement,
+cancellation, and forced overwrites.
 """
 
 import shutil
@@ -43,6 +43,9 @@ def run_cli(monkeypatch, capsys, *arguments):
 def copy_specimen(tmp_path, source):
     """
     Copy a specimen image into pytest's temporary working area.
+
+    Destructive CLI tests operate only on temporary copies so the permanent
+    specimen collection under ``tests/data`` is never modified.
     """
 
     destination = tmp_path / source.name
@@ -76,6 +79,7 @@ def test_strip_ai_creates_default_output_file(
     destination = tmp_path / "Attorney2-AI-Stripped.png"
 
     assert stderr == ""
+    assert source.exists()
     assert destination.exists()
     assert "AI metadata" in stdout
 
@@ -105,6 +109,7 @@ def test_strip_exif_creates_default_output_file(
     destination = tmp_path / "Attorney1-EXIF-Stripped.png"
 
     assert stderr == ""
+    assert source.exists()
     assert destination.exists()
     assert "Personal metadata" in stdout
 
@@ -130,6 +135,7 @@ def test_strip_all_creates_default_output_file(
     destination = tmp_path / "Attorney2-All-Stripped.png"
 
     assert stderr == ""
+    assert source.exists()
     assert destination.exists()
     assert f"  {destination}" in stdout
 
@@ -211,6 +217,7 @@ def test_strip_all_jpg_preserves_jpg_extension(
     destination = tmp_path / "Attorney6b-All-Stripped.jpg"
 
     assert stderr == ""
+    assert source.exists()
     assert destination.exists()
     assert destination.suffix == ".jpg"
     assert f"  {destination}" in stdout
@@ -429,9 +436,10 @@ def test_existing_output_no_cancels_without_overwriting(
     assert "Operation cancelled." in stdout
     assert "Removed:" not in stdout
     assert destination.read_bytes() == original_contents
+    assert source.exists()
 
 
-def test_force_overwrites_all_without_prompt(
+def test_force_overwrites_all_output_without_prompt(
     monkeypatch,
     capsys,
     tmp_path,
@@ -463,10 +471,40 @@ def test_force_overwrites_all_without_prompt(
 
     assert stderr == ""
     assert "Removed:" in stdout
+    assert source.exists()
 
     result = inspect_image(destination)
 
     assert result["ai"] is None
+
+
+def test_force_does_not_replace_original_without_overwrite(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    original_contents = source.read_bytes()
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--force",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney2-All-Stripped.png"
+
+    assert stderr == ""
+    assert destination.exists()
+    assert source.read_bytes() == original_contents
+    assert "Original filename preserved" not in stdout
 
 
 def test_short_force_option_works_with_all(
@@ -505,6 +543,265 @@ def test_short_force_option_works_with_all(
     result = inspect_image(destination)
 
     assert result["ai"] is None
+
+
+def test_overwrite_no_cancels_and_preserves_original(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    original_contents = source.read_bytes()
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: "n",
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney2-All-Stripped.png"
+
+    assert stderr == ""
+    assert f"{source} is the original image." in stdout
+    assert "Operation cancelled." in stdout
+    assert source.read_bytes() == original_contents
+    assert not destination.exists()
+
+
+def test_overwrite_enter_replaces_original(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: "",
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney2-All-Stripped.png"
+
+    assert stderr == ""
+    assert f"{source} is the original image." in stdout
+    assert source.exists()
+    assert not destination.exists()
+    assert f"  {source}" in stdout
+    assert "Original filename preserved" in stdout
+
+    result = inspect_image(source)
+
+    assert result["ai"] is None
+
+
+def test_overwrite_replaces_original_without_creating_stripped_file(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney1.png"),
+    )
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: "y",
+    )
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney1-All-Stripped.png"
+
+    assert source.exists()
+    assert not destination.exists()
+
+    result = inspect_image(source)
+
+    assert "Comment" not in result["container"]
+    assert "UserComment" not in result["exif"]
+
+
+def test_overwrite_force_replaces_original_without_prompt(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    def fail_if_prompted(prompt):
+        raise AssertionError(f"--overwrite --force unexpectedly prompted: {prompt}")
+
+    monkeypatch.setattr(
+        "builtins.input",
+        fail_if_prompted,
+    )
+
+    stdout, stderr = run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        "--force",
+        str(source),
+    )
+
+    destination = tmp_path / "Attorney2-All-Stripped.png"
+
+    assert stderr == ""
+    assert source.exists()
+    assert not destination.exists()
+    assert "Original filename preserved" in stdout
+
+    result = inspect_image(source)
+
+    assert result["ai"] is None
+
+
+def test_overwrite_preserves_png_path_and_extension(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    original_name = source.name
+    original_suffix = source.suffix
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        "--force",
+        str(source),
+    )
+
+    assert source.name == original_name
+    assert source.suffix == original_suffix
+    assert source.exists()
+
+
+def test_overwrite_preserves_jpg_path_and_extension(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/other/Attorney6b.jpg"),
+    )
+
+    original_name = source.name
+    original_suffix = source.suffix
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        "--force",
+        str(source),
+    )
+
+    assert source.name == original_name
+    assert source.suffix == ".jpg"
+    assert source.suffix == original_suffix
+    assert source.exists()
+
+    with source.open("rb") as file:
+        assert file.read(2) == b"\xff\xd8"
+
+
+def test_overwrite_jpg_removes_ai_metadata(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/other/Attorney6b.jpg"),
+    )
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        "--force",
+        str(source),
+    )
+
+    result = inspect_image(source)
+
+    assert result["format"] == "JPEG"
+    assert result["ai"] is None
+
+
+def test_overwrite_leaves_no_temporary_file_after_success(
+    monkeypatch,
+    capsys,
+    tmp_path,
+):
+    source = copy_specimen(
+        tmp_path,
+        Path("tests/data/Attorney2.png"),
+    )
+
+    run_cli(
+        monkeypatch,
+        capsys,
+        "strip",
+        "--all",
+        "--overwrite",
+        "--force",
+        str(source),
+    )
+
+    temporary_files = list(tmp_path.glob(".Attorney2-img-data-*"))
+
+    assert temporary_files == []
 
 
 def test_strip_without_metadata_option_exits_with_error(
